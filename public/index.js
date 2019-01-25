@@ -1,5 +1,6 @@
 //setup
-const socket = io.connect("http://192.168.1.89:6969");
+const socket = io({ transports: ["websocket"], upgrade: false });
+socket.connect("http://192.168.1.90:6969");
 //console.log("client Started", socket);
 
 //Query DOM
@@ -10,36 +11,38 @@ canvas.height = 960;
 const c = canvas.getContext("2d");
 
 //variables
-const id = socket.id;
 /**
  * startX, startY, widthPercent, heightPercent, color
  */
 let objects = [];
+let playerSprites = [];
+let backgroundSprite;
+let map = [];
+/**
+ * Constant Variables given by the Server
+ */
+let gameData;
 /**
  * Data of this client
  */
 let playerData = {
-  x: canvas.width / 2,
+  x: 850,
   y: 800,
   dx: 0,
   dy: 0,
-  verSpeed: 5,
-  horSpeed: 5,
-  lastKeyPress: 0,
-  newKeyPress: 0,
-  direction: "", //hit direction
-  width: 20, //hit box
-  height: 30, //hit box
-  color: getRandomColor()
+  direction: "right"
 };
+let lastKeyPress = 0;
+let newKeyPress = 0;
+let runSpriteState = 0;
 
 //inits
 
-registerPlayer();
 initMap();
+initGameData();
+initPlayerSprites();
 updateMovement();
-drawBackground();
-displayObjects();
+registerPlayer();
 
 //logic
 
@@ -48,18 +51,9 @@ document.onkeypress = event => {
   if (event.keyCode === 108 || event.keyCode === 76) {
     removeSocketFromServer();
   }
-  playerData.lastKeyPress = playerData.newKeyPress;
+  lastKeyPress = playerData.newKeyPress;
   playerData.newKeyPress = event.keyCode;
 };
-
-function getRandomColor() {
-  var letters = "0123456789ABCDEF";
-  var color = "#";
-  for (var i = 0; i < 6; i++) {
-    color += letters[Math.floor(Math.random() * 16)];
-  }
-  return color;
-}
 
 function updateMovement() {
   setInterval(() => {
@@ -68,11 +62,13 @@ function updateMovement() {
         //W
         //jump
         //console.log("W pressed");
-        if (playerData.y + playerData.height === getFloorHeightOfPlayer()) {
+        if (
+          playerData.y + gameData.playerHeight ===
+          getFloorHeightOfPlayer(playerData)
+        ) {
           playerData.dy = -10;
         }
-        playerData.direction = "up";
-        playerData.newKeyPress = playerData.lastKeyPress;
+        playerData.newKeyPress = lastKeyPress;
       } else if (
         playerData.newKeyPress === 97 ||
         playerData.newKeyPress === 65
@@ -80,7 +76,7 @@ function updateMovement() {
         //A
         //left
         //console.log("A pressed");
-        playerData.dx = -playerData.horSpeed;
+        playerData.dx = -gameData.playerMaxHorSpeed;
         playerData.direction = "left";
       } else if (
         playerData.newKeyPress === 115 ||
@@ -97,11 +93,15 @@ function updateMovement() {
         //D
         //right
         //console.log("D pressed");
-        playerData.dx = playerData.horSpeed;
+        playerData.dx = gameData.playerMaxHorSpeed;
         playerData.direction = "right";
       } else {
-        playerData.dx = 0;
-        playerData.lastKeyPress = 0;
+        if (playerData.direction === "right") {
+          playerData.dx = gameData.playerMinHorSpeed;
+        } else {
+          playerData.dx = -gameData.playerMinHorSpeed;
+        }
+        lastKeyPress = 0;
         playerData.newKeyPress = 0;
       }
       updatePosition();
@@ -111,17 +111,20 @@ function updateMovement() {
 
 function updatePosition() {
   //yPos
-  let playerFloorHeight = getFloorHeightOfPlayer();
-  let playerCeiling = getCeilingHeightOfPlayer();
-  if (playerData.y + playerData.height + playerData.dy < playerFloorHeight) {
+  let playerFloorHeight = getFloorHeightOfPlayer(playerData);
+  let playerCeiling = getCeilingHeightOfPlayer(playerData);
+  if (
+    playerData.y + gameData.playerHeight + playerData.dy <
+    playerFloorHeight
+  ) {
     if (playerData.y + playerData.dy > playerCeiling) {
-      playerData.dy += 0.3;
+      playerData.dy += gameData.gravity;
     } else {
-      playerData.y = playerCeiling + 1; //remove + 1
-      playerData.dy = playerData.dy * -0.3;
+      playerData.y = playerCeiling;
+      playerData.dy = playerData.dy * -gameData.gravity;
     }
   } else {
-    playerData.y = playerFloorHeight - playerData.height;
+    playerData.y = playerFloorHeight - gameData.playerHeight;
     playerData.dy = 0;
   }
   playerData.y += playerData.dy;
@@ -136,17 +139,17 @@ function updatePosition() {
 function getNewXOfPlayer() {
   let nextX = playerData.x + playerData.dx;
   let newX = nextX;
-  objects.map(object => {
+  map.objects.map(object => {
     if (object.width != canvas.width) {
-      if (!(playerData.y + playerData.height <= object.y)) {
+      if (!(playerData.y + gameData.playerHeight <= object.y)) {
         if (!(playerData.y > object.y + object.height)) {
           if (nextX < object.x + object.width && nextX > object.x) {
             newX = object.x + object.width + 0;
           } else if (
-            nextX + playerData.width > object.x &&
+            nextX + gameData.playerWidth > object.x &&
             nextX < object.x + object.width
           ) {
-            newX = object.x - playerData.width - 0;
+            newX = object.x - gameData.playerWidth - 0;
           }
         }
       }
@@ -155,16 +158,16 @@ function getNewXOfPlayer() {
   return newX;
 }
 
-function getFloorHeightOfPlayer() {
+function getFloorHeightOfPlayer(player) {
   let floorHeight = canvas.height;
-  objects.forEach(object => {
+  map.objects.forEach(object => {
     if (
       !(
-        playerData.x >= object.x + object.width ||
-        playerData.x + playerData.width <= object.x
+        player.x >= object.x + object.width ||
+        player.x + gameData.playerWidth <= object.x
       )
     ) {
-      if (!(object.y + object.height < playerData.y)) {
+      if (!(object.y + object.height < player.y)) {
         if (object.y < floorHeight) {
           floorHeight = object.y;
         }
@@ -174,16 +177,16 @@ function getFloorHeightOfPlayer() {
   return floorHeight;
 }
 
-function getCeilingHeightOfPlayer() {
+function getCeilingHeightOfPlayer(player) {
   let ceilingHeight = 0;
-  objects.forEach(object => {
+  map.objects.forEach(object => {
     if (
       !(
-        playerData.x >= object.x + object.width ||
-        playerData.x + playerData.width <= object.x
+        player.x >= object.x + object.width ||
+        player.x + gameData.playerWidth <= object.x
       )
     ) {
-      if (object.y + object.height < playerData.y) {
+      if (object.y + object.height < player.y) {
         if (object.y + object.height > ceilingHeight) {
           ceilingHeight = object.y + object.height;
         }
@@ -193,131 +196,63 @@ function getCeilingHeightOfPlayer() {
   return ceilingHeight;
 }
 
-function initMap() {
-  let ground = {
-    type: "ground_1",
-    x: 0,
-    y: 900,
-    width: canvas.width,
-    height: 60,
-    color: "#333333"
-  };
-  objects.push(ground);
-  const boxHeight = 25;
-  const boxColor = "#777777";
-  let box1 = {
-    type: "box_1",
-    x: 750,
-    y: 830,
-    width: boxHeight * 2,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box1);
-  let box2 = {
-    type: "box_1",
-    x: 550,
-    y: 700,
-    width: boxHeight,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box2);
-  let box3 = {
-    type: "box_1",
-    x: 400,
-    y: 550,
-    width: boxHeight * 2,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box3);
-  let box4 = {
-    type: "box_1",
-    x: 700,
-    y: 490,
-    width: boxHeight,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box4);
-  let box5 = {
-    type: "box_1",
-    x: 920,
-    y: 580,
-    width: boxHeight,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box5);
-  let box6 = {
-    type: "box_1",
-    x: 1200,
-    y: 600,
-    width: boxHeight * 2,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box6);
-  let box7 = {
-    type: "box_1",
-    x: 1300,
-    y: 450,
-    width: boxHeight * 2,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box7);
-  let box8 = {
-    type: "box_1",
-    x: 1100,
-    y: 320,
-    width: boxHeight * 2,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box8);
-  let box9 = {
-    type: "box_1",
-    x: 900,
-    y: 200,
-    width: boxHeight,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box9);
-  let box10 = {
-    type: "box_1",
-    x: 630,
-    y: 300,
-    width: boxHeight * 2,
-    height: boxHeight,
-    color: boxColor
-  };
-  objects.push(box10);
-  let goal = {
-    type: "finish_1",
-    x: 190,
-    y: 310,
-    width: 100,
-    height: boxHeight,
-    color: "#00A86B"
-  };
-  objects.push(goal);
-}
-
 //io functions
 
 function registerPlayer() {
   //console.log("registering!");
-  socket.emit("pl_register", playerData);
+  socket.emit("plr_register", playerData);
 }
 
+function initMap() {
+  //console.log("getting map from Server!");
+  socket.emit("map_get");
+}
+
+socket.on("map_set", mapData => {
+  //console.log("received mapData!", mapData);
+  map.id = mapData.id;
+  let image = new Image();
+  image.src = mapData.background;
+  map.background = image;
+  map.objects = [];
+  mapData.objects.forEach(object => {
+    image = new Image();
+    image.src = object.image;
+    object.image = image;
+    map.objects.push(object);
+  });
+  drawBackground();
+  displayMap();
+});
+
+function initGameData() {
+  socket.emit("gme_get");
+}
+
+socket.on("gme_set", data => {
+  //console.log("received gameData!");
+  gameData = data;
+});
+
+function initPlayerSprites() {
+  socket.emit("plr_sprites_get");
+}
+socket.on("plr_sprites_set", playerSpriteList => {
+  //console.log("received playerSpriteList!");
+  let image;
+  playerSpriteList.sprites.forEach(sprite => {
+    image = new Image();
+    let link = playerSpriteList.folder + sprite + playerSpriteList.dataType;
+    image.src = link;
+    playerSprites[sprite] = image;
+  });
+});
+
 socket.on("pls_update", players => {
-  //console.log("updating players", players);
+  //console.log("updating players!");
   clearCanvas();
   drawBackground();
-  displayObjects();
+  displayMap();
   displayPlayers(players);
 });
 
@@ -339,78 +274,67 @@ function removeSocketFromServer() {
 //canvas functions
 
 function drawBackground() {
-  let image = new Image();
-  image.src = "./sprites/background_1.png";
-  c.drawImage(image, 0, 0, canvas.width, canvas.height);
+  c.drawImage(map.background, 0, 0, canvas.width, canvas.height);
 }
 
 function displayPlayers(players) {
-  //console.log("drawing", players);
   players.map(player => {
     //drawPlayerHitBox(player);
-    drawSpriteOfPlayer(player);
+    drawPlayerSprite(player);
   });
 }
 
 function drawPlayerHitBox(player) {
+  let playerFloor = getFloorHeightOfPlayer(player);
   c.beginPath();
-  c.fillStyle = player.color;
-  c.fillRect(player.x, player.y, player.width, player.height);
+  c.fillStyle = "#cc33ff";
+  c.fillRect(player.x, player.y, gameData.playerWidth, gameData.playerHeight);
   c.stroke();
-  if (player.y + player.height < getFloorHeightOfPlayer()) {
-    c.fillStyle = "grey";
-    c.fillRect(player.x + player.width / 2 - 2, player.y - 20, 4, 20);
+  c.fillStyle = "#grey";
+  if (player.y + gameData.playerHeight < playerFloor) {
+    c.fillRect(player.x + gameData.playerWidth / 2 - 2, player.y - 20, 4, 20);
   } else if (player.direction === "left") {
-    c.fillStyle = "grey";
     c.fillRect(player.x - 20, player.y, 20, 4);
   } else if (player.direction === "right") {
-    c.fillStyle = "grey";
-    c.fillRect(player.x + player.width - 2, player.y, 20, 4);
-  } else if (player.y + player.height < getFloorHeightOfPlayer()) {
-    c.fillStyle = "grey";
-    c.fillRect(player.x + player.width / 2 - 2, player.y - 20, 4, 20);
+    c.fillRect(player.x + gameData.playerWidth - 2, player.y, 20, 4);
+  } else if (player.y + gameData.playerHeight < playerFloor) {
+    c.fillRect(player.x + gameData.playerWidth / 2 - 2, player.y - 20, 4, 20);
   }
   c.stroke();
   c.closePath();
 }
 
-function drawSpriteOfPlayer(player) {
-  let playerFloor = getFloorHeightOfPlayer();
-  let image = new Image();
-  if (player.dx === 0 && player.y + player.height === playerFloor) {
-    if (player.direction === "right") {
-      image.src = "./sprites/standard_right.png";
+function drawPlayerSprite(player) {
+  let playerFloor = getFloorHeightOfPlayer(player);
+  let playerSprite;
+  if (player.y + gameData.playerHeight != playerFloor) {
+    if (player.dy < 0) {
+      playerSprite = "jump_" + player.direction;
     } else {
-      image.src = "./sprites/standard_left.png";
-    }
-  } else if (player.dx != 0 && player.y + player.height === playerFloor) {
-    if (player.direction === "right") {
-      image.src = "./sprites/run_right.png";
-    } else {
-      image.src = "./sprites/run_left.png";
+      playerSprite = "glide_" + player.direction;
     }
   } else {
-    if (player.direction === "right") {
-      if (player.dy < 0) {
-        image.src = "./sprites/jump_right.png";
-      } else {
-        image.src = "./sprites/glide_right.png";
-      }
+    if (player.dx === 0) {
+      playerSprite = "standard_" + player.direction;
     } else {
-      if (player.dy < 0) {
-        image.src = "./sprites/jump_left.png";
-      } else {
-        image.src = "./sprites/glide_left.png";
-      }
+      playerSprite = "run_" + player.direction + "_" + runSpriteState;
+      runSpriteState++;
+      runSpriteState = runSpriteState % 10;
     }
   }
-  c.drawImage(image, player.x, player.y, player.width, player.height);
+  c.drawImage(
+    playerSprites[playerSprite],
+    player.x,
+    player.y,
+    gameData.playerWidth,
+    gameData.playerHeight
+  );
 }
 
-function displayObjects() {
-  objects.map(object => {
-    drawSpriteOfObject(object);
+function displayMap() {
+  map.objects.forEach(object => {
     //drawObjectHitBox(object);
+    c.drawImage(object.image, object.x, object.y, object.width, object.height);
   });
 }
 
@@ -420,18 +344,6 @@ function drawObjectHitBox(object) {
   c.fillRect(object.x, object.y, object.width, object.height);
   c.stroke();
   c.closePath();
-}
-
-function drawSpriteOfObject(object) {
-  let image = new Image();
-  if (object.type === "ground_1") {
-    image.src = "./sprites/ground_1.png";
-  } else if (object.type === "box_1") {
-    image.src = "./sprites/box_1.png";
-  } else if (object.type === "finish_1") {
-    image.src = "./sprites/finish_1.jpg";
-  }
-  c.drawImage(image, object.x, object.y, object.width, object.height);
 }
 
 function clearCanvas() {
