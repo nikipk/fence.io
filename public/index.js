@@ -1,6 +1,6 @@
 //setup
 const socket = io({ transports: ["websocket"], upgrade: false });
-socket.connect("http://192.168.1.90:6969");
+socket.connect("http://192.168.147.41:6969");
 //console.log("client Started", socket);
 
 //Query DOM
@@ -25,6 +25,8 @@ let gameData;
 /**
  * Data of this client
  */
+let playerData;
+/*
 let playerData = {
   x: 850,
   y: 800,
@@ -32,22 +34,16 @@ let playerData = {
   dy: 0,
   direction: "right"
 };
+*/
+
 let lastKeyPress = 0;
 let newKeyPress = 0;
 let runSpriteState = 0;
 
-//inits
-
-initMap();
-initGameData();
-initPlayerSprites();
-updateMovement();
-registerPlayer();
-
 //logic
 
 document.onkeypress = event => {
-  socket.emit("pos_update", playerData);
+  socket.emit("pos_update", playerData); //move to io functions
   if (event.keyCode === 108 || event.keyCode === 76) {
     removeSocketFromServer();
   }
@@ -56,6 +52,7 @@ document.onkeypress = event => {
 };
 
 function updateMovement() {
+  //console.log("starting game loop!");
   setInterval(() => {
     setTimeout(() => {
       if (playerData.newKeyPress === 119 || playerData.newKeyPress === 87) {
@@ -105,8 +102,8 @@ function updateMovement() {
         playerData.newKeyPress = 0;
       }
       updatePosition();
-    }, 20);
-  }, 20);
+    }, gameData.tickRate);
+  }, gameData.tickRate);
 }
 
 function updatePosition() {
@@ -198,67 +195,50 @@ function getCeilingHeightOfPlayer(player) {
 
 //io functions
 
-function registerPlayer() {
-  //console.log("registering!");
-  socket.emit("plr_register", playerData);
-}
+socket.on("plr_register", data => {
+  //console.log("received playerData!", data);
+  clearCanvas();
+  playerData = data;
+  updateMovement();
+});
 
-function initMap() {
-  //console.log("getting map from Server!");
-  socket.emit("map_get");
-}
-
-socket.on("map_set", mapData => {
-  //console.log("received mapData!", mapData);
-  map.id = mapData.id;
+socket.on("map_set", data => {
+  //console.log("received mapData!", data);
+  map.id = data.id;
   let image = new Image();
-  image.src = mapData.background;
+  image.src = data.background;
   map.background = image;
   map.objects = [];
-  mapData.objects.forEach(object => {
+  data.objects.forEach(object => {
     image = new Image();
     image.src = object.image;
     object.image = image;
     map.objects.push(object);
   });
-  drawBackground();
-  displayMap();
 });
 
-function initGameData() {
-  socket.emit("gme_get");
-}
-
 socket.on("gme_set", data => {
-  //console.log("received gameData!");
+  //console.log("received gameData!", data);
   gameData = data;
 });
 
-function initPlayerSprites() {
-  socket.emit("plr_sprites_get");
-}
-socket.on("plr_sprites_set", playerSpriteList => {
-  //console.log("received playerSpriteList!");
+socket.on("plr_sprites_set", data => {
+  //console.log("received playerSpriteList!", data);
   let image;
-  playerSpriteList.sprites.forEach(sprite => {
+  data.sprites.forEach(sprite => {
     image = new Image();
-    let link = playerSpriteList.folder + sprite + playerSpriteList.dataType;
+    let link = data.folder + sprite + data.dataType;
     image.src = link;
     playerSprites[sprite] = image;
   });
 });
 
-socket.on("pls_update", players => {
-  //console.log("updating players!");
+socket.on("pls_update", data => {
+  //console.log("updating players!", data);
   clearCanvas();
   drawBackground();
   displayMap();
-  displayPlayers(players);
-});
-
-socket.on("pl_setID", id => {
-  //console.log("received ID: ", id);
-  playerData.id = id;
+  displayPlayers(data);
 });
 
 function pushNewPositionToServer() {

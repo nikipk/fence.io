@@ -10,7 +10,7 @@ const server = app.listen(6969, () => {
   console.log("Using port:\t\t 6969");
 });
 */
-const server = app.listen(6969, "192.168.1.90");
+const server = app.listen(6969, "192.168.147.41");
 const io = socket(server);
 
 //variables
@@ -18,20 +18,25 @@ const playgroundWidth = 2000;
 let players = [];
 let mapLoad = 0;
 let gameLoad = 0;
+let playerLoad = 0;
 
 //io functions
 
 io.on("connection", socket => {
   connectMessage(socket);
+
+  pushGameData(socket);
+  pushMapData(socket);
+  pushPlayerSpriteList(socket);
+
+  let playerData = loadPlayerData(playerLoad);
+  pushPlayer(socket, playerData);
+
   socket.on("disconnect", () => removePlayer(socket));
-  socket.on("plr_register", data => addPlayer(socket, data));
   socket.on("pos_update", data => processNewPosition(socket, data));
-  socket.on("plr_sprites_get", () => pushPlayerData(socket));
-  socket.on("map_get", () => pushMapData(socket));
-  socket.on("gme_get", () => pushGameData(socket));
 });
 
-function pushPlayerData(socket) {
+function pushPlayerSpriteList(socket) {
   //console.log("pushing map to player!", map);
   let playerSpriteList = loadPlayerSpriteList();
   socket.emit("plr_sprites_set", playerSpriteList);
@@ -50,7 +55,7 @@ function pushGameData(socket) {
 }
 
 function pushNewPlayerData() {
-  //console.log("pushing new PLayer Data");
+  //console.log("pushing new PLayerData", players.length);
   let dataOfPlayers = [];
   players.forEach(player => {
     dataOfPlayers.push(player.data);
@@ -70,19 +75,16 @@ function removePlayer(socket) {
   pushNewPlayerData();
 }
 
-function addPlayer(socket, data) {
+function pushPlayer(socket, data) {
   console.log("New player:\t\t", socket.id);
   socket.data = data;
-  //console.log(players.length);
   players.push(socket);
+  socket.emit("plr_register", data);
   console.log("Number PLayers:\t\t", players.length);
-  pushNewPlayerData();
 }
 
 function processNewPosition(socket, data) {
-  //console.log(players.length);
-  socket.data = data; //data..x = data.x
-  //console.log(players.length);
+  socket.data = data;
   //validate
   pushNewPlayerData();
 }
@@ -150,7 +152,8 @@ function loadGameData(gameLoad) {
       playerMinHorSpeed: 0,
       playerHeight: 30,
       playerWidth: 20,
-      gravity: 0.3
+      gravity: 0.3,
+      tickRate: 20
     };
   } else if (gameLoad === 1) {
     gameData = {
@@ -158,7 +161,17 @@ function loadGameData(gameLoad) {
       playerMinHorSpeed: 0,
       playerHeight: 20,
       playerWidth: 10,
-      gravity: 0.2
+      gravity: 0.2,
+      tickRate: 20
+    };
+  } else if (gameLoad === 2) {
+    gameData = {
+      playerMaxHorSpeed: 5,
+      playerMinHorSpeed: 5,
+      playerHeight: 30,
+      playerWidth: 20,
+      gravity: 0.3,
+      tickRate: 20
     };
   }
   return gameData;
@@ -292,6 +305,20 @@ function loadMapData(mapLoad) {
     map.objects = objects;
   }
   return map;
+}
+
+function loadPlayerData(playerLoad) {
+  let playerData;
+  if (playerLoad === 0) {
+    playerData = {
+      x: 850,
+      y: 800,
+      dx: 0,
+      dy: 0,
+      direction: "right"
+    };
+  }
+  return playerData;
 }
 
 function loadPlayerSpriteList() {
