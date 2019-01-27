@@ -10,11 +10,13 @@ const server = app.listen(6969, () => {
   console.log("Using port:\t\t 6969");
 });
 */
-const server = app.listen(6969, "192.168.147.41");
+const server = app.listen(6969, "192.168.1.90");
 const io = socket(server);
+printMessage("Server status:\t", "running\t");
 
 //variables
-const playgroundWidth = 2000;
+const maxNumberPlayers = 20;
+const playgroundWidth = 3000;
 let players = [];
 let mapLoad = 0;
 let gameLoad = 0;
@@ -23,38 +25,38 @@ let playerLoad = 0;
 //io functions
 
 io.on("connection", socket => {
-  connectMessage(socket);
-
-  pushGameData(socket);
-  pushMapData(socket);
-  pushPlayerSpriteList(socket);
-
-  let playerData = loadPlayerData(playerLoad);
-  pushPlayer(socket, playerData);
-
-  socket.on("disconnect", () => removePlayer(socket));
-  socket.on("pos_update", data => processNewPosition(socket, data));
+  printMessage("New connection:", socket.handshake.address + "\t");
+  if (players.length + 1 <= maxNumberPlayers) {
+    pushGameData(socket);
+    pushMapData(socket);
+    pushPlayerSpriteList(socket);
+    let playerData = loadPlayerData(playerLoad);
+    pushPlayer(socket, playerData);
+    console.log(players.length);
+    socket.on("disconnect", () => removePlayer(socket));
+    socket.on("pos_update", data => processNewPosition(socket, data));
+  }
 });
 
-function pushPlayerSpriteList(socket) {
+pushPlayerSpriteList = socket => {
   //console.log("pushing map to player!", map);
   let playerSpriteList = loadPlayerSpriteList();
   socket.emit("plr_sprites_set", playerSpriteList);
-}
+};
 
-function pushMapData(socket) {
+pushMapData = socket => {
   //console.log("pushing map to player!");
   let map = loadMapData(mapLoad);
   socket.emit("map_set", map);
-}
+};
 
-function pushGameData(socket) {
+pushGameData = socket => {
   //console.log("pushing gameData to player!", gameData);
   let gameData = loadGameData(gameLoad);
   socket.emit("gme_set", gameData);
-}
+};
 
-function pushNewPlayerData() {
+pushNewPlayerData = () => {
   //console.log("pushing new PLayerData", players.length);
   let dataOfPlayers = [];
   players.forEach(player => {
@@ -63,39 +65,39 @@ function pushNewPlayerData() {
   players.forEach(player => {
     player.emit("pls_update", dataOfPlayers);
   });
-}
+};
 
-function removePlayer(socket) {
-  console.log("Remove player:\t\t", socket.id);
-  //console.log(players.length);
+removePlayer = socket => {
+  printMessage("Disconnected:\t", socket.handshake.address + "\t");
+  printMessage("Removed player:", socket.id);
   let i = players.indexOf(socket);
   players.splice(i, 1);
-  disconnectMessage(socket);
-  console.log("Number PLayers:\t\t", players.length);
+  printMessage("Number PLayers:", players.length + "\t\t");
   pushNewPlayerData();
-}
+};
 
-function pushPlayer(socket, data) {
-  console.log("New player:\t\t", socket.id);
+pushPlayer = (socket, data) => {
+  printMessage("New player:\t", socket.id);
   socket.data = data;
   players.push(socket);
   socket.emit("plr_register", data);
-  console.log("Number PLayers:\t\t", players.length);
-}
+  printMessage("Number Players:", players.length + "\t\t");
+};
 
-function processNewPosition(socket, data) {
+processNewPosition = (socket, data) => {
   socket.data = data;
   //validate
   pushNewPlayerData();
-}
+};
 
 //logic
 
-function disconnectMessage(socket) {
+function printMessage(text1, text2) {
   let timeStamp = new Date();
   console.log(
-    "Disconnect connection:\t",
-    socket.id,
+    text1,
+    "\t",
+    text2,
     "\t\t",
     timeStamp.getHours(),
     ":",
@@ -105,79 +107,43 @@ function disconnectMessage(socket) {
   );
 }
 
-function connectMessage(socket) {
-  let timeStamp = new Date();
-  console.log(
-    "New connection:\t\t",
-    socket.id,
-    "\t\t",
-    timeStamp.getHours(),
-    ":",
-    timeStamp.getMinutes(),
-    ":",
-    timeStamp.getSeconds()
-  );
-}
-
-function addedPlayerMessage(playerData) {
-  let timeStamp = new Date();
-  console.log(
-    "New player:\t\t",
-    playerData.id,
-    "\t\t",
-    timeStamp.getHours(),
-    ":",
-    timeStamp.getMinutes(),
-    ":",
-    timeStamp.getSeconds()
-  );
-}
-
-let timeStamp = new Date();
-console.log(
-  "Server status:\t\t running\t\t\t",
-  timeStamp.getHours(),
-  ":",
-  timeStamp.getMinutes(),
-  ":",
-  timeStamp.getSeconds()
-);
-
-//Data
-function loadGameData(gameLoad) {
+loadGameData = gameLoad => {
   let gameData;
   if (gameLoad === 0) {
     gameData = {
-      playerMaxHorSpeed: 5,
-      playerMinHorSpeed: 0,
-      playerHeight: 30,
-      playerWidth: 20,
+      playerMaxHorSpeed: 10,
+      playerMaxVerSpeed: 10,
+      playerHeight: 50,
+      playerWidth: 30,
       gravity: 0.3,
+      friction: 0.4,
       tickRate: 20
     };
   } else if (gameLoad === 1) {
     gameData = {
       playerMaxHorSpeed: 5,
-      playerMinHorSpeed: 0,
+      playerMaxVerSpeed: 10,
       playerHeight: 20,
       playerWidth: 10,
       gravity: 0.2,
+      friction: 0.1,
       tickRate: 20
     };
   } else if (gameLoad === 2) {
     gameData = {
       playerMaxHorSpeed: 5,
-      playerMinHorSpeed: 5,
+      playerMaxVerSpeed: 10,
       playerHeight: 30,
       playerWidth: 20,
       gravity: 0.3,
+      friction: 0.1,
       tickRate: 20
     };
   }
   return gameData;
-}
+};
 
-function loadMapData(mapLoad) {
+loadMapData = mapLoad => {
   let objects = [];
   let map = {
     id: -1,
@@ -193,7 +159,7 @@ function loadMapData(mapLoad) {
     //objects
     let ground = {
       image: "/sprites/maps/map_" + map.id + "/objects/ground_1.png",
-      x: 0,
+      x: -500,
       y: 900,
       width: playgroundWidth,
       height: 60,
@@ -208,7 +174,7 @@ function loadMapData(mapLoad) {
       x: 750,
       y: 830,
       width: boxHeight * 2,
-      height: boxHeight,
+      height: 70,
       color: boxColor
     };
     objects.push(box1);
@@ -305,9 +271,9 @@ function loadMapData(mapLoad) {
     map.objects = objects;
   }
   return map;
-}
+};
 
-function loadPlayerData(playerLoad) {
+loadPlayerData = playerLoad => {
   let playerData;
   if (playerLoad === 0) {
     playerData = {
@@ -315,13 +281,18 @@ function loadPlayerData(playerLoad) {
       y: 800,
       dx: 0,
       dy: 0,
-      direction: "right"
+      direction: "right",
+      wDown: false,
+      aDown: false,
+      sDown: false,
+      dDown: false,
+      name: "Player"
     };
   }
   return playerData;
-}
+};
 
-function loadPlayerSpriteList() {
+loadPlayerSpriteList = () => {
   let PlayerSpriteList = {
     folder: "/sprites/player/",
     dataType: ".png",
@@ -348,6 +319,8 @@ function loadPlayerSpriteList() {
       "run_left_8",
       "run_right_9",
       "run_left_9",
+      "slide_right",
+      "slide_left",
       "jump_right",
       "jump_left",
       "glide_right",
@@ -355,4 +328,4 @@ function loadPlayerSpriteList() {
     ]
   };
   return PlayerSpriteList;
-}
+};
